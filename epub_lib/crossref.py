@@ -75,11 +75,16 @@ def run(extracted: Path) -> dict[str, int]:
             i += 1
             eqnum[m.group(1)] = str(i)
 
-        # listings
+        # listings: pandoc's syntax highlighter gives every *code line* an
+        # id like "lst:foo-1", "lst:foo-2", ... -- skip those and number
+        # only the listing's own float anchor ("lst:foo").
         i = 0
         for m in re.finditer(r'id="(lst:[^"]+)"', s):
+            key = m.group(1)
+            if re.search(r"-\d+$", key):     # a per-line code anchor
+                continue
             i += 1
-            lstnum[m.group(1)] = str(i)
+            lstnum[key] = str(i)
 
         # theorem-like boxes: number per type per file
         counters: dict[str, int] = {}

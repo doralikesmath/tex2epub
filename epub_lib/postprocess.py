@@ -66,11 +66,18 @@ def _sanitize_ids(s: str) -> str:
 
 
 def _dedupe_ids(root: Path) -> None:
-    """If the same id occurs more than once across the book, keep the first
-    and strip the attribute from later occurrences."""
-    seen: set[str] = set()
+    """Within each XHTML file, if the same id occurs more than once keep the
+    first and strip the attribute from later occurrences.
+
+    IDs only need to be unique *within* a document, and fragment links
+    (href="#id") are resolved within the same file, so de-duplication must
+    be per-file. (Pandoc reuses code-block ids like ``cb1-1`` in every
+    chapter file; deduping globally would wrongly strip them and orphan the
+    matching ``href="#cb1-1"`` line-number backlinks.)
+    """
     for f in _xhtml_files(root):
         s = f.read_text(encoding="utf-8")
+        seen: set[str] = set()
         out = []
         last = 0
         for m in re.finditer(r'\bid="([^"]*)"', s):

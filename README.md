@@ -3,6 +3,11 @@
 Convert a multi-file LaTeX book to a validated EPUB 3 with native MathML
 equations and properly rendered TikZ / pgfplots figures.
 
+This is a generalised version of a pipeline built to convert a 567-page
+quantitative-finance textbook (24 chapters, 8 appendices, ~5,000 equations,
+50 TikZ figures, ~120 code listings) into an EPUB that passes `epubcheck`
+with zero errors and zero warnings.
+
 ## Quick start
 
 ```bash
@@ -15,7 +20,27 @@ python3 tex2epub.py main.tex \
     --title "My Book Title" \
     --author "Jane Author" \
     --validate
+
+# pick a syntax-highlight theme (default: pygments), or turn it off
+python3 tex2epub.py main.tex --highlight-style breezedark
+python3 tex2epub.py main.tex --highlight-style none
 ```
+
+## Syntax highlighting
+
+Code listings are syntax-highlighted automatically. Because pandoc does
+**not** read `\lstset` / `\lstdefinestyle`, the pipeline detects the book's
+default `listings` language (e.g. from `\lstset{style=python}` →
+`\lstdefinestyle{python}{language=Python}`) and injects `language=...` into
+every `\begin{lstlisting}[...]` block that lacks one. Pandoc's skylighting
+library then emits coloured `<span>`s and the colour rules are embedded in
+each chapter file.
+
+Choose a theme with `--highlight-style` (default `pygments`). Built-in
+options: `pygments`, `tango`, `espresso`, `zenburn`, `kate`, `monochrome`,
+`breezedark`, `haddock` (run `pandoc --list-highlight-styles` for the live
+list). Pass `none` to disable highlighting. A block that already declares
+its own language (say a `bash` snippet in a Python book) is left untouched.
 
 ## Requirements
 
@@ -78,7 +103,7 @@ missing.
 | Stage | Module | What happens |
 |------:|:-------|:-------------|
 | 1 | `figures.py` | Extract every `tikzpicture`, wrap each in a `standalone` document carrying only figure-relevant packages (tikz, pgfplots, colours, math macros), compile with `pdflatex`, rasterise to PNG. |
-| 2 | `preprocess.py` + `mathfix.py` | Substitute the rendered figures back; convert theorem-like `tcolorbox` environments to a bold lead-in + blockquote pandoc handles; lift `\label{}` out of display-math; rewrite math constructs pandoc's MathML reader rejects (`\Bigl`/`\Bigr`, `&&` inside `aligned`, `\qed`, accented bold macros, `\emph` inside `\text{}`, booktabs rules inside math arrays, etc.). |
+| 2 | `preprocess.py` + `mathfix.py` | Substitute the rendered figures back; convert theorem-like `tcolorbox` environments to a bold lead-in + blockquote pandoc handles; lift `\label{}` out of display-math; inject `language=...` into `lstlisting` blocks for syntax highlighting; rewrite math constructs pandoc's MathML reader rejects (`\Bigl`/`\Bigr`, `&&` inside `aligned`, `\qed`, accented bold macros, `\emph` inside `\text{}`, booktabs rules inside math arrays, etc.). |
 | 3 | `pandoc_run.py` | Run pandoc with `--mathml`, chapter-level splitting, TOC, cover, CSS. |
 | 4 | `postprocess.py` | Fix everything `epubcheck` would complain about: invalid `displaystyle` attributes, stray `label=` attributes, whitespace in `id`/`href` values, duplicate IDs, empty nav anchors, missing `dc:title`, missing `mathml` manifest property. |
 | 5 | `crossref.py` | Number equations and listings per chapter and rewrite link text so `\ref{eq:foo}` reads as `Eq. 5` instead of `[eq:foo]`; same for listings, theorem-boxes, chapter references. |

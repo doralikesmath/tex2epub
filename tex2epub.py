@@ -161,6 +161,12 @@ def main() -> int:
     ap.add_argument("--validate", action="store_true",
                     help="run epubcheck on the result (needs the "
                          "`epubcheck` python package)")
+    ap.add_argument("--highlight-style", default="pygments",
+                    help="syntax-highlight style for code listings "
+                         "(pygments, tango, espresso, zenburn, kate, "
+                         "monochrome, breezedark, haddock). Run "
+                         "`pandoc --list-highlight-styles` for the "
+                         "full list. Pass 'none' to disable.")
     ap.add_argument("--keep-workdir", action="store_true",
                     help="do not delete the scratch directory at the end")
     args = ap.parse_args()
@@ -210,9 +216,11 @@ def main() -> int:
     # ---- 3. pandoc -----------------------------------------------------
     print("\n[3/6] Running pandoc (LaTeX -> EPUB 3, MathML) ...")
     epub_tmp = work / "_pandoc_out.epub"
+    hl = None if args.highlight_style.lower() == "none" else args.highlight_style
     n_mathwarn = pandoc_run.run(
         work=work, output=epub_tmp, title=title, author=args.author,
         lang=args.lang, split_level=args.split_level, cover=cover_path,
+        highlight_style=hl,
     )
     if n_mathwarn:
         print(f"      WARNING: {n_mathwarn} equation(s) failed MathML "

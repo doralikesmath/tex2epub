@@ -4,6 +4,9 @@ For every chapter file it:
   * replaces each tikzpicture with \\includegraphics of the rendered PNG
   * converts theorem-like environments to a bold lead-in + blockquote
   * lifts \\label out of display math, applies math fixes (see mathfix.py)
+  * injects ``language=...`` into every ``\\begin{lstlisting}[...]`` that
+    lacks one, so pandoc emits a ``<code class="language-X">`` block
+    and skylighting syntax-highlights it
 
 It also writes `epub_master.tex` -- a thin root file that \\input's the
 preprocessed chapters and carries only the math macros pandoc needs.
@@ -16,6 +19,64 @@ from pathlib import Path
 from .common import (THEOREM_ENVS, split_preamble, chapter_input_order,
                      balanced_group)
 from . import mathfix
+
+
+def detect_default_language(preamble: str) -> str | None:
+    r"""Find the LaTeX listings language (e.g. 'Python', 'C++') that should
+    apply to lstlisting blocks lacking their own ``language=`` option.
+
+    Reads ``\lstset{...language=Foo...}`` directly, or ``\lstset{style=NAME}``
+    followed by a matching ``\lstdefinestyle{NAME}{...language=Foo...}``.
+    Returns ``None`` if no default can be determined.
+    """
+    # 1. \lstset{language=Foo,...}
+    m = re.search(r"\\lstset\{[^}]*\blanguage\s*=\s*([A-Za-z0-9+#-]+)",
+                  preamble)
+    if m:
+        return m.group(1)
+
+    # 2. \lstset{style=NAME} -> look up \lstdefinestyle{NAME}{... language=X ...}
+    m = re.search(r"\\lstset\{[^}]*\bstyle\s*=\s*([A-Za-z0-9_-]+)", preamble)
+    if m:
+        style = m.group(1)
+        # the lstdefinestyle body can contain braced sub-groups, so we
+        # balance-match it
+        idx = preamble.find("\\lstdefinestyle{" + style + "}")
+        if idx >= 0:
+            # skip past the {NAME} group
+            after = preamble.find("}", idx) + 1
+            # the next character should be '{' opening the options group
+            if after < len(preamble) and preamble[after] == "{":
+                body, _ = balanced_group(preamble, after)
+                lang = re.search(r"\blanguage\s*=\s*([A-Za-z0-9+#-]+)", body)
+                if lang:
+                    return lang.group(1)
+    return None
+
+
+def _inject_lstlisting_language(txt: str, language: str) -> str:
+    r"""Add ``language=<language>`` to every ``\begin{lstlisting}[...]``
+    that does not already specify one.
+
+    Pandoc does not read ``\lstset`` / ``\lstdefinestyle``; it only honours
+    the per-block option. So we copy the project-wide default onto each
+    block. Blocks that already declare a language (e.g. a bash snippet in
+    a Python book) are left untouched.
+    """
+    def add(m: re.Match) -> str:
+        opts = m.group(1)
+        if re.search(r"\blanguage\s*=", opts):
+            return m.group(0)        # already set
+        new_opts = opts.rstrip()
+        if new_opts and not new_opts.endswith(","):
+            new_opts += ", "
+        new_opts += f"language={language}"
+        return r"\begin{lstlisting}[" + new_opts + "]"
+    # an [options] group is allowed to contain balanced braces; this regex
+    # handles one level of nesting which covers caption={...}, label={..}.
+    return re.sub(
+        r"\\begin\{lstlisting\}\[((?:[^\[\]{}]|\{[^{}]*\})*)\]",
+        add, txt)
 
 
 def _anchor_float_labels(txt: str) -> str:
@@ -137,6 +198,8 @@ def run(main_tex: Path, book_root: Path, work: Path,
     out_dir = work / "epub_build"
     out_dir.mkdir(exist_ok=True)
 
+    default_lang = detect_default_language(pre)
+
     for ref in order:
         path = (book_root / ref)
         if path.suffix != ".tex":
@@ -154,6 +217,8 @@ def run(main_tex: Path, book_root: Path, work: Path,
             txt = _replace_tikz(txt, fig_index[path.name])
         txt = mathfix.lift_math_labels(txt)
         txt = _anchor_float_labels(txt)
+        if default_lang:
+            txt = _inject_lstlisting_language(txt, default_lang)
         txt = _convert_theorem_boxes(txt)
         txt = mathfix.fix(txt)
         (out_dir / path.name).write_text(txt, encoding="utf-8")
